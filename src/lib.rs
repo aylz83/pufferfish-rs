@@ -1,5 +1,4 @@
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
 use async_trait::async_trait;
 
 use async_compression::tokio::bufread::GzipDecoder;
@@ -71,7 +70,9 @@ pub trait BGZ
 }
 
 #[async_trait]
-impl BGZ for BufReader<File>
+impl<R> BGZ for BufReader<R>
+where
+	R: AsyncRead + Send + std::marker::Unpin,
 {
 	async fn read_bgzf_block<F>(
 		&mut self,
