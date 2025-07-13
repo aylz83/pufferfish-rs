@@ -16,17 +16,17 @@ loop
 {
   match reader
   // read bgzip blocks and decompresses, while looking for a bgzip EOF marker
-	.read_bgzf_block(Some(pufferfish::is_bgzip_eof))
-	.await
-	{
-		Ok(Some(bytes)) =>
+  .read_bgzf_block(Some(pufferfish::is_bgzip_eof))
+  .await
+  {
+    Ok(Some(bytes)) =>
     {
       // do something with the bytes, such as parsing the bed bytes with the nom crate
     },
     // EOF received, break out of the loop
-		Ok(None) => break,
+    Ok(None) => break,
     // Some form of error reading the BGZIP block, such as corruption
-		Err(err) => return Err(err.into()),
-	}
+    Err(err) => return Err(err.into()),
+  }
 }
 ```
