@@ -1,19 +1,18 @@
 [package]
 name = "pufferfish"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 readme = "README.md"
 keywords = ["sequencing", "bioinformatics"]
 authors = ["Eilidh Ward"]
 categories = ["science", "filesystem"]
-description = "A bgzip (and by extension, bam) block decompression trait for tokio"
+description = "A bgzip (and by extension, can read bam, bed, and tabix) block decompression trait for tokio"
 repository = "https://github.com/aylz83/pufferfish-rs"
 
 [dependencies]
-async-compression = { version = "0.4.12", features = ["gzip", "tokio"] }
-async-trait = "0.1.86"
-futures = "0.3.30"
-log = "0.4.22"
-thiserror = "2.0.11"
-tokio = { version = "1.40.0", features = ["full"] }
+async-compression = { version = "0.4.26", features = ["gzip", "tokio"] }
+async-trait = "0.1.88"
+futures = "0.3.31"
+thiserror = "2.0.12"
+tokio = { version = "1.46.1", features = ["full"] }

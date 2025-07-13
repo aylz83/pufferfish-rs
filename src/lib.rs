@@ -3,9 +3,16 @@ use async_trait::async_trait;
 
 use async_compression::tokio::bufread::GzipDecoder;
 
-use log::debug;
-
 pub mod error;
+
+const BGZIP_EOF_BLOCK: [u8; 28] = [
+	0x1f, 0x8b, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x06, 0x00, 0x42, 0x43, 0x02, 0x00,
+	0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
+const BAM_EOF_BLOCK: [u8; 12] = [
+	0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
 
 pub(crate) fn is_valid_bgzf_header(header: &[u8]) -> bool
 {
@@ -50,12 +57,14 @@ pub(crate) async fn decompress_bgz_block(compressed_block: &[u8]) -> crate::erro
 	Ok(bytes)
 }
 
-pub fn is_bam_eof(bytes: &[u8]) -> bool
+pub fn is_bgzf_eof(bsize: usize, block: &[u8]) -> bool
 {
-	bytes[16..=27]
-		== [
-			0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		]
+	bsize == 28 && block == BGZIP_EOF_BLOCK
+}
+
+pub fn is_bam_eof(bsize: usize, bytes: &[u8]) -> bool
+{
+	bsize == 28 && bytes[16..=27] == BAM_EOF_BLOCK
 }
 
 #[async_trait]
@@ -66,7 +75,7 @@ pub trait BGZ
 		eof_check: Option<F>,
 	) -> crate::error::Result<Option<Vec<u8>>>
 	where
-		F: Fn(&[u8]) -> bool + std::marker::Send;
+		F: Fn(usize, &[u8]) -> bool + std::marker::Send;
 }
 
 #[async_trait]
@@ -79,7 +88,7 @@ where
 		eof_check: Option<F>,
 	) -> crate::error::Result<Option<Vec<u8>>>
 	where
-		F: Fn(&[u8]) -> bool + std::marker::Send,
+		F: Fn(usize, &[u8]) -> bool + std::marker::Send,
 	{
 		let mut header = [0; 18];
 
@@ -104,21 +113,13 @@ where
 					.await
 					.map_err(|_| crate::error::Error::BGZRead)?;
 
-				match eof_check
+				// If a custom EOF check is provided, check if this is true, otherwise
+				// assume EOF if bsize == 28
+				if matches!(eof_check, Some(ref check_fn) if check_fn(bsize, &compressed_block))
+					|| bsize == 28
 				{
-					Some(check_fn) =>
-					{
-						if bsize == 28 && check_fn(&compressed_block)
-						{
-							debug!("EOF header = {:?}", compressed_block);
-							return Ok(None);
-						}
-					}
-					None =>
-					{
-						debug!("EOF header = {:?}", compressed_block);
-						return Ok(None);
-					}
+					// debug!("EOF header = {:?}", compressed_block);
+					return Ok(None);
 				}
 
 				let decompressed_block = decompress_bgz_block(&compressed_block).await?;
