@@ -4,7 +4,7 @@ A small Rust crate to read and uncompress blocks from BGZip data (BAM for exampl
 
 ## Example usage -
 
-```{rust}
+```rust
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, BufReader};
 use pufferfish::BGZ;
