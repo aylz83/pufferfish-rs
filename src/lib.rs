@@ -1,4 +1,4 @@
-use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
+use tokio::io::{AsyncSeekExt, SeekFrom, AsyncRead, AsyncReadExt, BufReader};
 use async_trait::async_trait;
 
 use async_compression::tokio::bufread::GzipDecoder;
@@ -70,6 +70,8 @@ pub fn is_bam_eof(bsize: usize, bytes: &[u8]) -> bool
 #[async_trait]
 pub trait BGZ
 {
+	async fn is_bgz(&mut self) -> crate::error::Result<bool>;
+
 	async fn read_bgzf_block<F>(
 		&mut self,
 		eof_check: Option<F>,
@@ -81,8 +83,40 @@ pub trait BGZ
 #[async_trait]
 impl<R> BGZ for BufReader<R>
 where
-	R: AsyncRead + Send + std::marker::Unpin,
+	R: AsyncRead + std::marker::Send + std::marker::Unpin + AsyncSeekExt,
 {
+	async fn is_bgz(&mut self) -> crate::error::Result<bool>
+	{
+		let mut header = [0; 18];
+
+		let current_position = self
+			.get_mut()
+			.seek(SeekFrom::Current(0))
+			.await
+			.map_err(|_| crate::error::Error::BGZRead)?;
+
+		match self.read_exact(&mut header).await
+		{
+			Ok(_) =>
+			{
+				self.get_mut()
+					.seek(SeekFrom::Start(current_position))
+					.await
+					.map_err(|_| crate::error::Error::BGZRead)?;
+				return Ok(is_valid_bgzf_header(&header));
+			}
+			Err(_) =>
+			{
+				self.get_mut()
+					.seek(SeekFrom::Start(current_position))
+					.await
+					.map_err(|_| crate::error::Error::BGZRead)?;
+
+				return Err(crate::error::Error::BGZRead);
+			}
+		}
+	}
+
 	async fn read_bgzf_block<F>(
 		&mut self,
 		eof_check: Option<F>,
