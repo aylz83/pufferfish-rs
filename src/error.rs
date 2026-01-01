@@ -6,9 +6,11 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub enum Error
 {
 	#[error("Unable to decompress BGZ block")]
-	BGZDecompress,
+	Decompress,
 	#[error("Unable to read BGZ block")]
-	BGZRead,
+	Read,
 	#[error("Invalid BGZ header: {0:?}")]
-	BGZInvalidHeader([u8; 18]),
+	InvalidHeader([u8; 18]),
+	#[error("IO error: {0}")]
+	Io(#[from] std::io::Error),
 }
