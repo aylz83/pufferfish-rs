@@ -1,23 +1,27 @@
 [package]
 name = "pufferfish"
-version = "0.1.3"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 license = "MIT"
 readme = "README.md"
 keywords = ["sequencing", "bioinformatics"]
 authors = ["Eilidh Ward"]
 categories = ["science", "filesystem"]
-description = "A bgzip (and by extension, can read bam, bed, and tabix) and zlib (such as bigBed) block decompression trait for tokio"
+description = "A bgzip (and by extension, can read bam, bed, and tabix) and zlib (such as bigBed) block decompression trait for tokio and rayon"
 repository = "https://github.com/aylz83/pufferfish-rs"
 
 [dependencies]
-async-compression = { version = "0.4.26", features = ["tokio"] }
-async-trait = "0.1.88"
-futures = "0.3.31"
-thiserror = "2.0.12"
-tokio = { version = "1.46.1", features = ["full"] }
+async-compression = { version = "0.4.41", features = ["tokio"] }
+crossbeam = { version = "0.8.4", features = ["crossbeam-queue"] }
+futures = "0.3.32"
+libdeflater = { version = "1.25.2", optional = true }
+# futures-core = { version = "0.3.32", optional = true }
+rayon = { version = "1.11.0", optional = true }
+thiserror = "2.0.18"
+tokio = { version = "1.50.0", features = ["full"] }
 
 [features]
-default = []
-bgzf = ["async-compression/gzip"]
+default = ["bgzf-async"]
+bgzf-async = ["async-compression/gzip"]
+bgzf-stream = ["dep:rayon", "dep:libdeflater"]
 zlib = ["async-compression/zlib"]

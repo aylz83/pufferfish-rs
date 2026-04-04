@@ -1,7 +1,19 @@
-use tokio::io::{AsyncSeekExt, SeekFrom, AsyncRead, AsyncReadExt, BufReader};
-use async_trait::async_trait;
+pub mod pool;
 
-use async_compression::tokio::bufread::GzipDecoder;
+use crate::bgzf::pool::BgzfBlockPool;
+
+use tokio::io::{AsyncSeekExt, SeekFrom, AsyncRead, AsyncReadExt, BufReader};
+
+use std::sync::Arc;
+
+use crate::error;
+
+pub type BgzfCompressedBlock = Vec<u8>;
+
+#[cfg(feature = "bgzf-async")]
+pub mod async_decompression;
+#[cfg(feature = "bgzf-stream")]
+pub mod stream;
 
 const BGZIP_EOF_BLOCK: [u8; 28] = [
 	0x1f, 0x8b, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x06, 0x00, 0x42, 0x43, 0x02, 0x00,
@@ -11,8 +23,6 @@ const BGZIP_EOF_BLOCK: [u8; 28] = [
 const BAM_EOF_BLOCK: [u8; 12] = [
 	0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
-
-use crate::error;
 
 pub(crate) fn is_valid_bgzf_header(header: &[u8]) -> bool
 {
@@ -46,17 +56,6 @@ pub(crate) fn is_valid_bgzf_header(header: &[u8]) -> bool
 	true
 }
 
-pub(crate) async fn decompress_bgz_block(compressed_block: &[u8]) -> crate::error::Result<Vec<u8>>
-{
-	let mut bytes: Vec<u8> = Vec::new();
-	let mut decoder = GzipDecoder::new(compressed_block); // Skip the header for decompression
-	decoder
-		.read_to_end(&mut bytes)
-		.await
-		.map_err(|_| crate::error::Error::Decompress)?; // Collect the decompressed bytes into a Vec<u8>
-	Ok(bytes)
-}
-
 pub fn is_bgzf_eof(bsize: usize, block: &[u8]) -> bool
 {
 	bsize == 28 && block == BGZIP_EOF_BLOCK
@@ -67,20 +66,33 @@ pub fn is_bam_eof(bsize: usize, bytes: &[u8]) -> bool
 	bsize == 28 && bytes[16..=27] == BAM_EOF_BLOCK
 }
 
-#[async_trait]
+pub type EofCheck = fn(usize, &[u8]) -> bool;
+
 pub trait BGZ
 {
-	async fn is_bgz(&mut self) -> bool;
+	fn is_bgz(&mut self) -> impl std::future::Future<Output = bool> + Send;
 
-	async fn read_bgzf_block<F>(
+	fn read_bgzf_block<F>(
 		&mut self,
 		eof_check: Option<F>,
-	) -> crate::error::Result<Option<Vec<u8>>>
+	) -> impl std::future::Future<Output = crate::error::Result<Option<BgzfCompressedBlock>>> + Send
+	where
+		F: Fn(usize, &[u8]) -> bool + std::marker::Send;
+	fn read_and_decompress_bgzf_block<F>(
+		&mut self,
+		eof_check: Option<F>,
+	) -> impl std::future::Future<Output = crate::error::Result<Option<Vec<u8>>>> + Send
+	where
+		F: Fn(usize, &[u8]) -> bool + std::marker::Send;
+	fn read_bgzf_block_pool<F>(
+		&mut self,
+		pool: Arc<BgzfBlockPool>,
+		eof_check: Option<F>,
+	) -> impl std::future::Future<Output = error::Result<Option<BgzfCompressedBlock>>> + Send
 	where
 		F: Fn(usize, &[u8]) -> bool + std::marker::Send;
 }
 
-#[async_trait]
 impl<R> BGZ for BufReader<R>
 where
 	R: AsyncRead + std::marker::Send + std::marker::Unpin + AsyncSeekExt,
@@ -117,7 +129,7 @@ where
 	async fn read_bgzf_block<F>(
 		&mut self,
 		eof_check: Option<F>,
-	) -> crate::error::Result<Option<Vec<u8>>>
+	) -> crate::error::Result<Option<BgzfCompressedBlock>>
 	where
 		F: Fn(usize, &[u8]) -> bool + std::marker::Send,
 	{
@@ -153,14 +165,96 @@ where
 					return Ok(None);
 				}
 
-				let decompressed_block = decompress_bgz_block(&compressed_block).await?;
-
-				Ok(Some(decompressed_block))
+				Ok(Some(compressed_block))
 			}
 			Err(_) =>
 			{
 				return Err(error::Error::Read);
 			}
+		}
+	}
+
+	#[cfg(all(feature = "bgzf-async", not(feature = "bgzf-stream")))]
+	async fn read_and_decompress_bgzf_block<F>(
+		&mut self,
+		eof_check: Option<F>,
+	) -> crate::error::Result<Option<Vec<u8>>>
+	where
+		F: Fn(usize, &[u8]) -> bool + std::marker::Send,
+	{
+		let block = self.read_bgzf_block(eof_check).await?;
+		match block
+		{
+			Some(block) => Ok(Some(
+				crate::bgzf::async_decompression::decompress_bgzf_block(&block).await?,
+			)),
+			None => Ok(None),
+		}
+	}
+
+	#[cfg(feature = "bgzf-stream")]
+	async fn read_and_decompress_bgzf_block<F>(
+		&mut self,
+		eof_check: Option<F>,
+	) -> crate::error::Result<Option<Vec<u8>>>
+	where
+		F: Fn(usize, &[u8]) -> bool + std::marker::Send,
+	{
+		let block = self.read_bgzf_block(eof_check).await?;
+		match block
+		{
+			Some(block) => Ok(Some(crate::bgzf::stream::decompress_bgzf_block(&block)?)),
+			None => Ok(None),
+		}
+	}
+
+	async fn read_bgzf_block_pool<F>(
+		&mut self,
+		pool: Arc<BgzfBlockPool>,
+		eof_check: Option<F>,
+	) -> error::Result<Option<BgzfCompressedBlock>>
+	where
+		F: Fn(usize, &[u8]) -> bool + std::marker::Send,
+	{
+		let mut header = [0u8; 18];
+
+		match self.read_exact(&mut header).await
+		{
+			Ok(_) =>
+			{
+				if !crate::bgzf::is_valid_bgzf_header(&header)
+				{
+					return Err(error::Error::InvalidHeader(header));
+				}
+
+				// Determine the full block size
+				let bsize = u16::from_le_bytes([header[16], header[17]]) as usize + 1;
+
+				// Acquire a buffer from the pool
+				let mut compressed_block = pool.acquire();
+				if compressed_block.len() < bsize
+				{
+					compressed_block.resize(bsize, 0); // grow if needed
+				}
+
+				// Copy header and read rest
+				compressed_block[..18].copy_from_slice(&header);
+				self.read_exact(&mut compressed_block[18..bsize])
+					.await
+					.map_err(|_| error::Error::Read)?;
+
+				// Check for EOF
+				if matches!(eof_check, Some(ref check_fn) if check_fn(bsize, &compressed_block[..bsize]))
+					|| bsize == 28
+				{
+					// Return buffer to pool
+					pool.release(compressed_block);
+					return Ok(None);
+				}
+
+				Ok(Some(compressed_block[..bsize].to_vec()))
+			}
+			Err(_) => Err(error::Error::Read),
 		}
 	}
 }
