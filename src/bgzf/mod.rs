@@ -68,33 +68,31 @@ pub fn is_bam_eof(bsize: usize, bytes: &[u8]) -> bool
 
 pub type EofCheck = fn(usize, &[u8]) -> bool;
 
-#[async_trait::async_trait]
 pub trait BGZ
 {
-	async fn is_bgz(&mut self) -> bool;
+	fn is_bgz(&mut self) -> impl std::future::Future<Output = bool> + Send;
 
-	async fn read_bgzf_block<F>(
+	fn read_bgzf_block<F>(
 		&mut self,
 		eof_check: Option<F>,
-	) -> crate::error::Result<Option<BgzfCompressedBlock>>
+	) -> impl std::future::Future<Output = crate::error::Result<Option<BgzfCompressedBlock>>> + Send
 	where
 		F: Fn(usize, &[u8]) -> bool + std::marker::Send;
-	async fn read_and_decompress_bgzf_block<F>(
+	fn read_and_decompress_bgzf_block<F>(
 		&mut self,
 		eof_check: Option<F>,
-	) -> crate::error::Result<Option<Vec<u8>>>
+	) -> impl std::future::Future<Output = crate::error::Result<Option<Vec<u8>>>> + Send
 	where
 		F: Fn(usize, &[u8]) -> bool + std::marker::Send;
-	async fn read_bgzf_block_pool<F>(
+	fn read_bgzf_block_pool<F>(
 		&mut self,
 		pool: Arc<BgzfBlockPool>,
 		eof_check: Option<F>,
-	) -> error::Result<Option<BgzfCompressedBlock>>
+	) -> impl std::future::Future<Output = error::Result<Option<BgzfCompressedBlock>>> + Send
 	where
 		F: Fn(usize, &[u8]) -> bool + std::marker::Send;
 }
 
-#[async_trait::async_trait]
 impl<R> BGZ for BufReader<R>
 where
 	R: AsyncRead + std::marker::Send + std::marker::Unpin + AsyncSeekExt,

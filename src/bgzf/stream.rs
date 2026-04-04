@@ -1,4 +1,4 @@
-use tokio::io::{AsyncSeekExt, AsyncRead, BufReader};
+use tokio::io::{AsyncSeekExt, AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 
@@ -15,6 +15,7 @@ use crate::bgzf::{BgzfCompressedBlock, BGZ, EofCheck};
 use crate::error;
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct BgzfBlockStream<R>
 {
 	reader: Arc<Mutex<BufReader<R>>>,
@@ -38,6 +39,23 @@ where
 	}
 }
 
+impl<R> BgzfBlockStream<R>
+where
+	R: AsyncRead + AsyncSeekExt + Send + Unpin,
+{
+	pub async fn reset(&self) -> error::Result<()>
+	{
+		let mut reader = self.reader.lock().await;
+
+		reader.seek(std::io::SeekFrom::Start(0)).await?;
+
+		let buffered_len = reader.buffer().len();
+		reader.consume(buffered_len);
+
+		Ok(())
+	}
+}
+
 impl<R> Stream for BgzfBlockStream<R>
 where
 	R: AsyncRead + AsyncSeekExt + std::marker::Send + std::marker::Unpin + 'static,
@@ -55,11 +73,16 @@ where
 
 		let fut = async move {
 			let mut locked = reader.lock().await;
-			let block = locked.read_bgzf_block_pool(pool, eof_check).await?;
-			Ok(block)
+			locked.read_bgzf_block_pool(pool, eof_check).await
 		};
 
-		Poll::Ready(Some(Box::pin(fut)))
+		Poll::Ready(Some(Box::pin(async move {
+			match fut.await?
+			{
+				Some(block) => Ok(Some(block)),
+				None => Ok(None),
+			}
+		})))
 	}
 }
 
