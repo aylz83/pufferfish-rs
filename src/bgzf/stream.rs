@@ -54,6 +54,18 @@ where
 
 		Ok(())
 	}
+
+	pub async fn seek_to(&self, block_start: u64) -> error::Result<()>
+	{
+		let mut reader = self.reader.lock().await;
+
+		reader.seek(std::io::SeekFrom::Start(block_start)).await?;
+
+		let buffered_len = reader.buffer().len();
+		reader.consume(buffered_len);
+
+		Ok(())
+	}
 }
 
 impl<R> Stream for BgzfBlockStream<R>
