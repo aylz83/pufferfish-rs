@@ -1,6 +1,6 @@
 [package]
 name = "pufferfish"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "MIT"
 readme = "README.md"
@@ -11,14 +11,14 @@ description = "A bgzip (and by extension, can read bam, bed, and tabix) and zlib
 repository = "https://github.com/aylz83/pufferfish-rs"
 
 [dependencies]
-async-compression = { version = "0.4.41", features = ["tokio"] }
-crossbeam = { version = "0.8.4", features = ["crossbeam-queue"] }
-futures = "0.3.32"
-libdeflater = { version = "1.25.2", optional = true }
+async-compression = { version = "0.4.50", features = ["tokio"] }
+crossbeam = { version = "0.8.5", features = ["crossbeam-queue"] }
+futures = "0.3.34"
+libdeflater = { version = "1.26.1", optional = true }
 # futures-core = { version = "0.3.32", optional = true }
-rayon = { version = "1.11.0", optional = true }
-thiserror = "2.0.18"
-tokio = { version = "1.50.0", features = ["full"] }
+rayon = { version = "1.12.0", optional = true }
+thiserror = "2.0.21"
+tokio = { version = "1.53.3", features = ["full"] }
 
 [features]
 default = ["bgzf-async"]
