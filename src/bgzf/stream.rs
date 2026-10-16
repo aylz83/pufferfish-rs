@@ -55,16 +55,16 @@ where
 		Ok(())
 	}
 
-	pub async fn seek_to(&self, block_start: u64) -> error::Result<()>
+	pub async fn seek_to(&self, seek_position: std::io::SeekFrom) -> error::Result<u64>
 	{
 		let mut reader = self.reader.lock().await;
 
-		reader.seek(std::io::SeekFrom::Start(block_start)).await?;
+		let final_position = reader.seek(seek_position).await?;
 
 		let buffered_len = reader.buffer().len();
 		reader.consume(buffered_len);
 
-		Ok(())
+		Ok(final_position)
 	}
 }
 
