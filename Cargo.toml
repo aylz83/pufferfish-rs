@@ -1,6 +1,6 @@
 [package]
 name = "pufferfish"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 license = "MIT"
 readme = "README.md"
@@ -19,6 +19,7 @@ libdeflater = { version = "1.26.1", optional = true }
 rayon = { version = "1.12.0", optional = true }
 thiserror = "2.0.21"
 tokio = { version = "1.53.3", features = ["full"] }
+tracing = "0.1.44"
 
 [features]
 default = ["bgzf-async"]

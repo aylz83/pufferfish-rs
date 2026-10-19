@@ -10,18 +10,31 @@ use std::task::{Context, Poll};
 use futures::Stream;
 use futures::future::BoxFuture;
 
+use tracing::debug;
+
 use crate::bgzf::BgzfBlockPool;
 use crate::bgzf::{BgzfCompressedBlock, BGZ, EofCheck};
 use crate::error;
 
 #[allow(dead_code)]
-#[derive(Clone)]
 pub struct BgzfBlockStream<R>
 {
 	reader: Arc<Mutex<BufReader<R>>>,
 	pool: Arc<BgzfBlockPool>,
 	// index: u64,
 	eof_check: Option<EofCheck>,
+}
+
+impl<R> Clone for BgzfBlockStream<R>
+{
+	fn clone(&self) -> Self
+	{
+		Self {
+			reader: Arc::clone(&self.reader),
+			pool: Arc::clone(&self.pool),
+			eof_check: self.eof_check,
+		}
+	}
 }
 
 impl<R> BgzfBlockStream<R>
@@ -57,14 +70,23 @@ where
 
 	pub async fn seek_to(&self, seek_position: std::io::SeekFrom) -> error::Result<u64>
 	{
+		debug!("seek_to: waiting for mutex");
 		let mut reader = self.reader.lock().await;
+		debug!("seek_to: acquired mutex");
 
 		let final_position = reader.seek(seek_position).await?;
+		debug!(final_position, "seek_to: completed");
 
 		let buffered_len = reader.buffer().len();
 		reader.consume(buffered_len);
 
 		Ok(final_position)
+	}
+
+	pub async fn stream_position(&self) -> error::Result<u64>
+	{
+		let mut reader = self.reader.lock().await;
+		Ok(reader.seek(std::io::SeekFrom::Current(0)).await?)
 	}
 }
 
