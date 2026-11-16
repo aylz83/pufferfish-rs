@@ -10,16 +10,17 @@ use crate::error;
 use crate::bgzf::BgzfCompressedBlock;
 use crate::bgzf::BgzfBlockPool;
 
-use crate::bgzf::BGZIP_EOF_BLOCK;
-
-const BGZF_MAX_BLOCK_SIZE: usize = 65_536;
-const BGZF_HEADER_SIZE: usize = 18;
-const BGZF_TRAILER_SIZE: usize = 8;
-const BGZF_OVERHEAD: usize = BGZF_HEADER_SIZE + BGZF_TRAILER_SIZE;
+use crate::bgzf::BGZF_MAX_BLOCK_SIZE;
+use crate::bgzf::BGZF_HEADER_SIZE;
+use crate::bgzf::BGZF_HEADER;
+use crate::bgzf::BGZF_OVERHEAD;
+use crate::bgzf::BGZF_EOF_BLOCK;
 
 pub trait EncodeBgzfPayload
 {
-	fn encode_into(self, bytes: &mut Vec<u8>) -> error::Result<()>;
+	type Error: Into<crate::error::Error>;
+
+	fn encode_into(self, bytes: &mut Vec<u8>) -> Result<(), Self::Error>;
 }
 
 #[derive(Clone)]
@@ -53,6 +54,7 @@ where
 	) -> error::Result<Self>
 	where
 		H: EncodeBgzfPayload,
+		H::Error: Into<crate::error::Error>,
 	{
 		let writer = Self::new(writer, pool, block_pool);
 
@@ -92,7 +94,7 @@ where
 		let mut writer = self.writer.lock().await;
 
 		writer
-			.write_all(&BGZIP_EOF_BLOCK)
+			.write_all(&BGZF_EOF_BLOCK)
 			.await
 			.map_err(|_| error::Error::Write)?;
 
@@ -233,25 +235,24 @@ pub fn encode_and_compress_bgzf_blocks<I, T>(
 where
 	I: IntoIterator<Item = T>,
 	T: EncodeBgzfPayload,
+	T::Error: Into<crate::error::Error>,
 {
 	let mut bytes = Vec::new();
 
 	for value in values
 	{
-		value.encode_into(&mut bytes)?;
+		value.encode_into(&mut bytes).map_err(Into::into)?;
 	}
 
 	compress_bgzf_blocks(&bytes, remainder, thread_pool, block_pool)
 }
 
-fn build_bgzf_header(bsize: u16) -> [u8; BGZF_HEADER_SIZE]
+const fn build_bgzf_header(bsize: u16) -> [u8; BGZF_HEADER_SIZE]
 {
-	let mut header = [
-		0x1f, 0x8b, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x06, 0x00, 0x42, 0x43, 0x02,
-		0x00, 0x00, 0x00,
-	];
+	let mut header = BGZF_HEADER;
 
-	header[16..18].copy_from_slice(&bsize.to_le_bytes());
+	header[16] = bsize as u8;
+	header[17] = (bsize >> 8) as u8;
 
 	header
 }
