@@ -328,6 +328,8 @@ mod tests
 
 	impl EncodeBgzfPayload for TestPayload
 	{
+		type Error = error::Error;
+
 		fn encode_into(self, bytes: &mut Vec<u8>) -> error::Result<()>
 		{
 			bytes.extend_from_slice(&self.0);
