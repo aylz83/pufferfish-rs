@@ -1,4 +1,6 @@
 pub mod pool;
+#[cfg(feature = "bgzf-write")]
+pub mod writer;
 
 use crate::bgzf::pool::BgzfBlockPool;
 
@@ -24,13 +26,16 @@ const BAM_EOF_BLOCK: [u8; 12] = [
 	0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-pub(crate) fn is_valid_bgzf_header(header: &[u8]) -> bool {
-	if header.len() != 18 {
+pub(crate) fn is_valid_bgzf_header(header: &[u8]) -> bool
+{
+	if header.len() != 18
+	{
 		return false; // Invalid header size.
 	}
 
 	// Check the fixed values in the header (no need for endianness consideration here).
-	if header[0] != 0x1f || header[1] != 0x8b || header[2] != 0x08 {
+	if header[0] != 0x1f || header[1] != 0x8b || header[2] != 0x08
+	{
 		return false; // Not a valid GZIP header.
 	}
 
@@ -45,24 +50,28 @@ pub(crate) fn is_valid_bgzf_header(header: &[u8]) -> bool {
 
 	// Interpret BSIZE as a little-endian 16-bit integer.
 	let bsize = u16::from_le_bytes([header[16], header[17]]);
-	if bsize < 18 {
+	if bsize < 18
+	{
 		return false; // BSIZE should be at least 18 for a valid BGZF block.
 	}
 
 	true
 }
 
-pub fn is_bgzf_eof(bsize: usize, block: &[u8]) -> bool {
+pub fn is_bgzf_eof(bsize: usize, block: &[u8]) -> bool
+{
 	bsize == 28 && block == BGZIP_EOF_BLOCK
 }
 
-pub fn is_bam_eof(bsize: usize, bytes: &[u8]) -> bool {
+pub fn is_bam_eof(bsize: usize, bytes: &[u8]) -> bool
+{
 	bsize == 28 && bytes[16..=27] == BAM_EOF_BLOCK
 }
 
 pub type EofCheck = fn(usize, &[u8]) -> bool;
 
-pub trait BGZ {
+pub trait BGZ
+{
 	fn is_bgz(&mut self) -> impl std::future::Future<Output = bool> + Send;
 
 	fn read_bgzf_block<F>(
@@ -90,10 +99,12 @@ impl<R> BGZ for R
 where
 	R: AsyncRead + std::marker::Send + std::marker::Unpin + AsyncSeekExt,
 {
-	async fn is_bgz(&mut self) -> bool {
+	async fn is_bgz(&mut self) -> bool
+	{
 		let mut header = [0u8; 18];
 
-		let current_position = match self.seek(SeekFrom::Current(0)).await {
+		let current_position = match self.seek(SeekFrom::Current(0)).await
+		{
 			Ok(value) => value,
 			Err(_) => return false,
 		};
@@ -110,7 +121,8 @@ where
 			return false;
 		}
 
-		match read_result {
+		match read_result
+		{
 			Ok(_) => is_valid_bgzf_header(&header),
 			Err(_) => false,
 		}
@@ -125,9 +137,12 @@ where
 	{
 		let mut header = [0; 18];
 
-		match self.read_exact(&mut header).await {
-			Ok(_) => {
-				if !is_valid_bgzf_header(&header) {
+		match self.read_exact(&mut header).await
+		{
+			Ok(_) =>
+			{
+				if !is_valid_bgzf_header(&header)
+				{
 					return Err(error::Error::InvalidHeader(header)); // Skip to the next block if header is invalid.
 				}
 
@@ -154,7 +169,8 @@ where
 
 				Ok(Some(compressed_block))
 			}
-			Err(_) => {
+			Err(_) =>
+			{
 				return Err(error::Error::Read);
 			}
 		}
@@ -169,7 +185,8 @@ where
 		F: Fn(usize, &[u8]) -> bool + std::marker::Send,
 	{
 		let block = self.read_bgzf_block(eof_check).await?;
-		match block {
+		match block
+		{
 			Some(block) => Ok(Some(
 				crate::bgzf::async_decompression::decompress_bgzf_block(&block).await?,
 			)),
@@ -186,7 +203,8 @@ where
 		F: Fn(usize, &[u8]) -> bool + std::marker::Send,
 	{
 		let block = self.read_bgzf_block(eof_check).await?;
-		match block {
+		match block
+		{
 			Some(block) => Ok(Some(crate::bgzf::stream::decompress_bgzf_block(&block)?)),
 			None => Ok(None),
 		}
@@ -202,9 +220,12 @@ where
 	{
 		let mut header = [0u8; 18];
 
-		match self.read_exact(&mut header).await {
-			Ok(_) => {
-				if !crate::bgzf::is_valid_bgzf_header(&header) {
+		match self.read_exact(&mut header).await
+		{
+			Ok(_) =>
+			{
+				if !crate::bgzf::is_valid_bgzf_header(&header)
+				{
 					return Err(error::Error::InvalidHeader(header));
 				}
 
@@ -213,7 +234,8 @@ where
 
 				// Acquire a buffer from the pool
 				let mut compressed_block = pool.acquire();
-				if compressed_block.len() < bsize {
+				if compressed_block.len() < bsize
+				{
 					compressed_block.resize(bsize, 0); // grow if needed
 				}
 

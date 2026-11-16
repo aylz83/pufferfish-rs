@@ -7,6 +7,10 @@ pub enum Error
 {
 	#[error("Unable to decompress BGZ block")]
 	Decompress,
+	#[error("Unable to compress BGZ block")]
+	Compress,
+	#[error("Unable to write BGZ block")]
+	Write,
 	#[error("Unable to read BGZ block")]
 	Read,
 	#[error("Invalid BGZ header: {0:?}")]
