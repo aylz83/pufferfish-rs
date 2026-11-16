@@ -18,9 +18,9 @@ use crate::bgzf::BGZF_EOF_BLOCK;
 
 pub trait EncodeBgzfPayload
 {
-	type Error: Into<crate::error::Error>;
+	type Error: From<crate::error::Error>;
 
-	fn encode_into(self, bytes: &mut Vec<u8>) -> Result<(), Self::Error>;
+	fn encode_into(self, bytes: &mut Vec<u8>) -> std::result::Result<(), Self::Error>;
 }
 
 #[derive(Clone)]
@@ -51,10 +51,9 @@ where
 		header: H,
 		pool: Arc<rayon::ThreadPool>,
 		block_pool: Arc<BgzfBlockPool>,
-	) -> error::Result<Self>
+	) -> std::result::Result<Self, H::Error>
 	where
 		H: EncodeBgzfPayload,
-		H::Error: Into<crate::error::Error>,
 	{
 		let writer = Self::new(writer, pool, block_pool);
 
@@ -63,7 +62,7 @@ where
 		Ok(writer)
 	}
 
-	pub async fn write<I, T>(&self, values: I) -> error::Result<()>
+	pub async fn write<I, T>(&self, values: I) -> std::result::Result<(), T::Error>
 	where
 		I: IntoIterator<Item = T>,
 		T: EncodeBgzfPayload,
@@ -81,7 +80,9 @@ where
 
 			self.block_pool.release(block);
 
-			result?;
+			result
+				.map_err(crate::error::Error::from)
+				.map_err(T::Error::from)?;
 		}
 
 		Ok(())
@@ -231,20 +232,19 @@ pub fn encode_and_compress_bgzf_blocks<I, T>(
 	remainder: &mut Vec<u8>,
 	thread_pool: &rayon::ThreadPool,
 	block_pool: &BgzfBlockPool,
-) -> error::Result<Vec<BgzfCompressedBlock>>
+) -> std::result::Result<Vec<BgzfCompressedBlock>, T::Error>
 where
 	I: IntoIterator<Item = T>,
 	T: EncodeBgzfPayload,
-	T::Error: Into<crate::error::Error>,
 {
 	let mut bytes = Vec::new();
 
 	for value in values
 	{
-		value.encode_into(&mut bytes).map_err(Into::into)?;
+		value.encode_into(&mut bytes)?;
 	}
 
-	compress_bgzf_blocks(&bytes, remainder, thread_pool, block_pool)
+	compress_bgzf_blocks(&bytes, remainder, thread_pool, block_pool).map_err(T::Error::from)
 }
 
 const fn build_bgzf_header(bsize: u16) -> [u8; BGZF_HEADER_SIZE]
